@@ -5,8 +5,7 @@ import binascii
 import hexdump
 import struct
 
-
-CR = ({0: 0}, {0: 0}, {0: 0, 1: 0, 2: 4, 3: 8}, {0: 0, 1: 1, 2: 2, 3: 0xFFFF})
+CR = ((0), (0), (0, 0, 4, 8), (0, 1, 2, 0xFFFF))
 
 
 class Core(object):
@@ -19,6 +18,34 @@ class Core(object):
         self.memory = memory
         self.dict = diction
 
+    # def getbytes(self, word, start, end):
+    #     start -= 1
+    #     end -= 1
+    #     len = end - start
+    #     wordlen = str(word)
+    #     #wordlen = len(wordlen)
+    #     rmask = 0
+    #     count = 0
+    #     if len == 0 : return 0
+    #     while len!=0:
+    #         if (len-4) >= 0:
+    #             len -= 4
+    #             rmask += (0xF << 4 * count)
+    #         elif (len-3) >= 0:
+    #             len -= 3
+    #             rmask += (0x7 << 4 * count)
+    #         elif (len-2) >= 0:
+    #             len -= 2
+    #             rmask += (0x3 << 4 * count)
+    #         elif (len-1) >= 0:
+    #             len -= 1
+    #             rmask += (0x1 << 4 * count)
+    #         count += 1
+    #         print(rmask)
+    #         j = (word >> (wordlen-end-1))
+    #     return (word >> (wordlen-end-1)) & rmask
+
+
     # payload
     def mov(self, word):
         src = (word & 0x0f00) >> 8
@@ -27,30 +54,24 @@ class Core(object):
         asrc = (word & 0x0030) >> 4
         dst = word & 0x000f
         result = 0
-        print('mov')
-        print(word)
+
         if asrc == 3:
             if src == 0:  # !!WARNING mov @R0+, RI!!
                 self.R[0] += 2
                 sword = self.memory.read_word(self.R[0])
-                print(sword)
                 result = sword
             elif src not in (2, 3):
                 result = self.memory.read_word(self.R[src])
                 self.R[src] += 2
             else:
                 result = CR[src][asrc]
-
         if asrc == 2:
             if src in {2, 3}:
                 result = CR[src][asrc]
             elif src == 0:
                 result = self.memory.read_word(self.R[0] + 2)
             else:
-                print("!!!!!")
-                print(self.R[4])
                 result = self.memory.read_word(self.R[src])
-                print(result)
         if asrc == 1:
             if src == 3:
                 result = CR[src][asrc]
@@ -61,9 +82,6 @@ class Core(object):
             else:
                 self.R[0] += 2
                 sword = self.memory.read_word(self.R[0])
-                print("sword")
-                print(sword)
-                print((self.R[src] + sword) & 0x0ffff)
                 result = self.memory.read_word((self.R[src] + sword) & 0x0ffff)
         if asrc == 0:
             if src == 3:
@@ -83,20 +101,13 @@ class Core(object):
                 dst = (self.R[dst] + dword) & 0x0ffff
             self.memory.write_word(dst, result)
             self.R[0] += 4
-
-            print(dword)
             hexdump.hexdump(memory.dump())
             return 0
-
         if adst == 0:  # mov #N, RI
             self.R[dst] = result
-
             hexdump.hexdump(memory.dump())
             print(self.R[4])
             print(self.R[8])
-            # print(self.R[5])
-            # read next word
-        # self.R[dst] = result #
         return 0
 
     def add(self, word):
@@ -156,7 +167,7 @@ class Core(object):
         # while True:
         print(word)
         self.R[4] = 0x110a
-        self.memory.write_word(self.R[0], 0x3fff)
+        self.memory.write_word(self.R[0], 0x4f05)
         self.memory.write_word(self.R[0] + 2, 0xfff2)
         self.memory.write_word(self.R[0] + 4, 0x007)
         command = self.memory.read_word(self.R[0])
