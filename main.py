@@ -8,14 +8,35 @@ CR = ((0), (0), (0, 0, 4, 8), (0, 1, 2, 0xFFFF))
 
 
 class Core(object):
-    def __init__(self, code, memory, diction):
+    def __init__(self, code, memory):
         self.R = [0] * 16
         for i in range(4, len(self.R)):
             self.R[i] = 0xcdcd
             # print(self.R[15])
         self.code = code
         self.memory = memory
-        self.dict = diction
+        self.caller = {
+            4: Core.twooparithm,
+            5: Core.twooparithm,
+
+            0x3F: Core.jmp
+        }
+        self.dict = {
+            4: Core.mov,
+            5: Core.add,
+            6: Core.addc,
+            7: Core.subc,
+            8: Core.sub,
+            9: Core.cmp,
+            0xA: Core.dadd,
+            0xB: Core.bit,
+            0xC: Core.bic,
+            0xD: Core.bis,
+            0xE: Core.xor,
+            0xF: Core.andf,
+
+            0x3F: Core.jmp
+        }
 
     # def getbytes(self, word, start, end):
     #     start -= 1
@@ -59,37 +80,11 @@ class Core(object):
         # returns list with params (length, hasSourceWord, hasDestinationWord)
 
     # payload
-    def mov(self, word):
-        src = (word & 0x0f00) >> 8
-        adst = (word & 0x0080) >> 7
-        bw = (word & 0x0040) >> 6
-        asrc = (word & 0x0030) >> 4
-        dst = word & 0x000f
-        result = 0
-
-        instrdescr = self.getinstrlength(word, src, dst, asrc, adst, bw)
-        self.R[0] += 2*instrdescr[0]
-
-        if src == 2 and asrc != 1 and asrc != 0 or src == 3:
-            result = CR[src][asrc]
-        else:
-            if asrc == 3:  # mov #N, () src == 0 # mov @RI+, () src != 0
-                result = self.memory.read_word(self.R[src]-2*(instrdescr[1]+instrdescr[2])*(src == 0))
-                self.R[src] += 2 * (src != 0)
-            elif asrc == 2:
-                result = self.memory.read_word(self.R[src]-2*(instrdescr[1]+instrdescr[2])*(src == 0))
-            elif asrc == 1:
-                result = self.memory.read_word((self.R[src]*(src != 2) - 2*(src == 0) + self.memory.read_word(self.R[0]-2*(instrdescr[1]+instrdescr[2]))) & 0x0ffff)
-            elif asrc == 0:
-                result = self.R[src]
-
-        if adst == 1:
-            dst = (self.R[dst]*(dst != 2) - 2*(dst == 0) + self.memory.read_word(self.R[0] - 2*instrdescr[2])) & 0x0ffff
+    def mov(self, result, dst, wtd):
+        if wtd == 1:
             self.memory.write_word(dst, result)
-        elif adst == 0 and dst != 3:
+        elif wtd == 2:
             self.R[dst] = result
-
-        return 0
 
     def add(self, word):
         pass
@@ -103,7 +98,7 @@ class Core(object):
     def sub(self, word):
         pass
 
-    def cmp(self, word):
+    def cmp(self, result, dst, wtd):
         pass
 
     def dadd(self, word):
@@ -127,12 +122,48 @@ class Core(object):
     def andf(self, word):
         pass
 
-    def jmp(self, word):
+    def jmp(self, word, payload):
         print(self.R[0])
         offset = (word & 0x03ff)
         self.R[0] += (2 + offset * 2) & 0x3ff
         print(self.R[0])
         pass
+
+    def twooparithm(self, word, payload):
+        src = (word & 0x0f00) >> 8
+        adst = (word & 0x0080) >> 7
+        bw = (word & 0x0040) >> 6
+        asrc = (word & 0x0030) >> 4
+        dst = word & 0x000f
+        result = 0
+        wtd = 0 # 0 -> nothing 1 -> write to memory 2 -> write to register
+        instrdescr = self.getinstrlength(word, src, dst, asrc, adst, bw)
+        self.R[0] += 2*instrdescr[0]
+
+        if src == 2 and asrc != 1 and asrc != 0 or src == 3:
+            result = CR[src][asrc]
+        else:
+            if asrc == 3:  # mov #N, () src == 0 # mov @RI+, () src != 0
+                result = self.memory.read_word(self.R[src]-2*(instrdescr[1]+instrdescr[2])*(src == 0))
+                self.R[src] += 2 * (src != 0)
+            elif asrc == 2:
+                result = self.memory.read_word(self.R[src]-2*(instrdescr[1]+instrdescr[2])*(src == 0))
+            elif asrc == 1:
+                result = self.memory.read_word((self.R[src]*(src != 2) - 2*(src == 0) + self.memory.read_word(self.R[0]-2*(instrdescr[1]+instrdescr[2]))) & 0x0ffff)
+            elif asrc == 0:
+                result = self.R[src]
+
+        if adst == 1:
+            dst = (self.R[dst]*(dst != 2) - 2*(dst == 0) + self.memory.read_word(self.R[0] - 2*instrdescr[2])) & 0x0ffff
+            # self.memory.write_word(dst, result)
+            wtd = 1
+
+        elif adst == 0 and dst != 3:
+            #dst = self.R[dst]
+            wtd = 2
+            # self.R[dst] = result
+        payload(self, result, dst, wtd)
+        return 0
 
     def getopcode(self, word):
         opcode = (word & 0xf000) >> 12  # mov add cmp etc.
@@ -155,7 +186,8 @@ class Core(object):
             command = self.memory.read_word(self.R[0])
             opcode = self.getopcode(command)
             print(command)
-            self.dict[opcode](self, command)
+            self.caller[opcode](self, command, self.dict[opcode])
+            #self.dict[opcode](self, command)
         hexdump.hexdump(memory.dump())
         for i in range(16): print("R["+str(i)+"]= "+str(self.R[i]))
 
@@ -270,7 +302,7 @@ def read_memory(path):
 
 
 # print(core.R)
-code = read_memory('memoryTest2.bin')
+code = read_memory('memoryTest3.bin')
 memory = Memory(code, [
     Segment('sfr', 0x0000, 0x0200, Segment.READ_MODE | Segment.WRITE_MODE),
     Segment('ram', 0x0200, 0x0A00, Segment.READ_MODE | Segment.WRITE_MODE),
@@ -279,22 +311,7 @@ memory = Memory(code, [
     Segment('flash', 0x1100, 0x10000, Segment.READ_MODE | Segment.WRITE_MODE),
 ])
 # functions instead
-core = Core(code, memory, {
-    4: Core.mov,
-    5: Core.add,
-    6: Core.addc,
-    7: Core.subc,
-    8: Core.sub,
-    9: Core.cmp,
-    0xA: Core.dadd,
-    0xB: Core.bit,
-    0xC: Core.bic,
-    0xD: Core.bis,
-    0xE: Core.xor,
-    0xF: Core.andf,
-
-    0x3F: Core.jmp
-})
+core = Core(code, memory)
 # memory.write_word(0x1200, 0xAA55)
 # print memory.read_word(0x1200) == 0xAA55
 
