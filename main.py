@@ -80,11 +80,11 @@ class Core(object):
         # returns list with params (length, hasSourceWord, hasDestinationWord)
 
     # payload
-    def mov(self, result, dst, wtd):
+    def mov(self, src, dst, wtd):
         if wtd == 1:
-            self.memory.write_word(dst, result)
+            self.memory.write_word(dst, src)
         elif wtd == 2:
-            self.R[dst] = result
+            self.R[dst] = src
 
     def add(self, word):
         pass
@@ -98,7 +98,16 @@ class Core(object):
     def sub(self, word):
         pass
 
-    def cmp(self, result, dst, wtd):
+    def cmp(self, src, dst, wtd):
+        if wtd == 2:
+            dst = self.R[dst]
+        result = dst - src
+        if result > 0:
+            self.R[2] = 1
+        elif result < 0:
+            self.R[2] = 4
+        else:
+            self.R[2] = 3
         pass
 
     def dadd(self, word):
