@@ -108,7 +108,7 @@ class Core(object):
             self.R[2] = 4
         else:
             self.R[2] = 3
-        pass
+        return 0
 
     def dadd(self, word):
         pass
