@@ -1,6 +1,5 @@
 __author__ = 'OlaPsema'
 
-
 import binascii
 import hexdump
 import struct
@@ -46,6 +45,19 @@ class Core(object):
     #     return (word >> (wordlen-end-1)) & rmask
 
 
+    def getinstrlength(self, word, src, dst, asrc, adst, bw):
+        length = 1
+        result = [0, 0, 0]
+        if asrc == 1 and src != 3 or asrc == 3 and src == 0:
+            length += 1
+            result[1] = 1
+        if adst == 1:
+            length += 1
+            result[2] = 1
+        result[0] = length
+        return result
+        # returns list with params (length, hasSourceWord, hasDestinationWord)
+
     # payload
     def mov(self, word):
         src = (word & 0x0f00) >> 8
@@ -55,59 +67,28 @@ class Core(object):
         dst = word & 0x000f
         result = 0
 
-        if asrc == 3:
-            if src == 0:  # !!WARNING mov @R0+, RI!!
-                self.R[0] += 2
-                sword = self.memory.read_word(self.R[0])
-                result = sword
-            elif src not in (2, 3):
-                result = self.memory.read_word(self.R[src])
-                self.R[src] += 2
-            else:
-                result = CR[src][asrc]
-        if asrc == 2:
-            if src in {2, 3}:
-                result = CR[src][asrc]
-            elif src == 0:
-                result = self.memory.read_word(self.R[0] + 2)
-            else:
-                result = self.memory.read_word(self.R[src])
-        if asrc == 1:
-            if src == 3:
-                result = CR[src][asrc]
-            elif src == 2:
-                self.R[0] += 2
-                sword = self.memory.read_word(self.R[0])
-                result = self.memory.read_word(sword)
-            else:
-                self.R[0] += 2
-                sword = self.memory.read_word(self.R[0])
-                result = self.memory.read_word((self.R[src] + sword) & 0x0ffff)
-        if asrc == 0:
-            if src == 3:
-                result = 0
-            elif src == 0:
-                result = self.R[0] + 2
-                # возможно и не плюс 2, нужно смотреть дальше
-            else:
+        instrdescr = self.getinstrlength(word, src, dst, asrc, adst, bw)
+        self.R[0] += 2*instrdescr[0]
+
+        if src == 2 and asrc != 1 and asrc != 0 or src == 3:
+            result = CR[src][asrc]
+        else:
+            if asrc == 3:  # mov #N, () src == 0 # mov @RI+, () src != 0
+                result = self.memory.read_word(self.R[src]-2*(instrdescr[1]+instrdescr[2])*(src == 0))
+                self.R[src] += 2 * (src != 0)
+            elif asrc == 2:
+                result = self.memory.read_word(self.R[src]-2*(instrdescr[1]+instrdescr[2])*(src == 0))
+            elif asrc == 1:
+                result = self.memory.read_word((self.R[src]*(src != 2) - 2*(src == 0) + self.memory.read_word(self.R[0]-2*(instrdescr[1]+instrdescr[2]))) & 0x0ffff)
+            elif asrc == 0:
                 result = self.R[src]
 
         if adst == 1:
-            # self.R[0] += 2
-            dword = self.memory.read_word(self.R[0] + 2)
-            if dst == 2:  # mov #N, &addr -> 3 byte length
-                dst = dword
-            if dst not in (2, 3):  # mov #N, addr or mov #N, M(RI)
-                dst = (self.R[dst] + dword) & 0x0ffff
+            dst = (self.R[dst]*(dst != 2) - 2*(dst == 0) + self.memory.read_word(self.R[0] - 2*instrdescr[2])) & 0x0ffff
             self.memory.write_word(dst, result)
-            self.R[0] += 4
-            hexdump.hexdump(memory.dump())
-            return 0
-        if adst == 0:  # mov #N, RI
+        elif adst == 0 and dst != 3:
             self.R[dst] = result
-            hexdump.hexdump(memory.dump())
-            print(self.R[4])
-            print(self.R[8])
+
         return 0
 
     def add(self, word):
@@ -165,15 +146,18 @@ class Core(object):
     def run(self, word):
         self.R[0] = word
         # while True:
-        print(word)
-        self.R[4] = 0x110a
-        self.memory.write_word(self.R[0], 0x4f05)
-        self.memory.write_word(self.R[0] + 2, 0xfff2)
-        self.memory.write_word(self.R[0] + 4, 0x007)
-        command = self.memory.read_word(self.R[0])
-        opcode = self.getopcode(command)
-        print(command)
-        self.dict[opcode](self, command)
+        # print(word)
+        # self.R[15] = 0x110a
+        # self.memory.write_word(self.R[0], 0x4f05)
+        # self.memory.write_word(self.R[0] + 2, 0xfff2)
+        # self.memory.write_word(self.R[0] + 4, 0x007)
+        for i in range(200):
+            command = self.memory.read_word(self.R[0])
+            opcode = self.getopcode(command)
+            print(command)
+            self.dict[opcode](self, command)
+        hexdump.hexdump(memory.dump())
+        for i in range(16): print("R["+str(i)+"]= "+str(self.R[i]))
 
 
 class IMemory(object):
@@ -281,18 +265,16 @@ def read_memory(path):
     with open(path, 'r') as f:
         data = f.read()
         data = ''.join(data.splitlines()[1:-1]).replace(' ', '')
-        # print(data)
-
         data = binascii.unhexlify(data)
-
-        # print(data)
     return data
 
+
 # print(core.R)
-code = read_memory('memory.bin')
+code = read_memory('memoryTest2.bin')
 memory = Memory(code, [
     Segment('sfr', 0x0000, 0x0200, Segment.READ_MODE | Segment.WRITE_MODE),
     Segment('ram', 0x0200, 0x0A00, Segment.READ_MODE | Segment.WRITE_MODE),
+    Segment('undefined', 0x0A00, 0x1000, Segment.READ_MODE | Segment.WRITE_MODE),
     Segment('info', 0x1000, 0x1100, Segment.READ_MODE | Segment.WRITE_MODE),
     Segment('flash', 0x1100, 0x10000, Segment.READ_MODE | Segment.WRITE_MODE),
 ])
@@ -310,6 +292,7 @@ core = Core(code, memory, {
     0xD: Core.bis,
     0xE: Core.xor,
     0xF: Core.andf,
+
     0x3F: Core.jmp
 })
 # memory.write_word(0x1200, 0xAA55)
@@ -323,4 +306,4 @@ core.run(memory.read_word(0xfffe))
 # ram = Memory(core.code[16*32:16*128], "ram")
 # print(ram)
 # info = Memory(core.code[0:16*32], "info")
-#flash = Memory(core.code[0:16*32], "flash")
+# flash = Memory(core.code[0:16*32], "flash")
