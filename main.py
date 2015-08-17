@@ -18,6 +18,16 @@ class Core(object):
         self.caller = {
             4: Core.twooparithm,
             5: Core.twooparithm,
+            6: Core.twooparithm,
+            7: Core.twooparithm,
+            8: Core.twooparithm,
+            9: Core.twooparithm,
+            0xA: Core.twooparithm,
+            0xB: Core.twooparithm,
+            0xC: Core.twooparithm,
+            0xD: Core.twooparithm,
+            0xE: Core.twooparithm,
+            0xF: Core.twooparithm,
 
             0x3F: Core.jmp
         }
@@ -85,6 +95,7 @@ class Core(object):
             self.memory.write_word(dst, src)
         elif wtd == 2:
             self.R[dst] = src
+        return 0
 
     def add(self, word):
         pass
@@ -101,13 +112,20 @@ class Core(object):
     def cmp(self, src, dst, wtd):
         if wtd == 2:
             dst = self.R[dst]
-        result = dst - src
-        if result > 0:
-            self.R[2] = 1
-        elif result < 0:
-            self.R[2] = 4
-        else:
-            self.R[2] = 3
+        if wtd == 1:
+            dst = self.memory.read_word(dst)
+        # result = (dst - src)
+        result = dst + (0xffff-src) + 1
+        carrybit = (result & 0x10000) >> 16
+        negativebit = (result & 0x8000) >> 15
+        zerobit = (result & 0xffff) == 0
+        self.R[2] = 0
+        if carrybit == 1:
+            self.R[2] += 1
+        if negativebit == 1:
+            self.R[2] += 4
+        if zerobit == 1:
+            self.R[2] += 2
         return 0
 
     def dadd(self, word):
@@ -311,7 +329,7 @@ def read_memory(path):
 
 
 # print(core.R)
-code = read_memory('memoryTest3.bin')
+code = read_memory('memoryTestcmp.bin')
 memory = Memory(code, [
     Segment('sfr', 0x0000, 0x0200, Segment.READ_MODE | Segment.WRITE_MODE),
     Segment('ram', 0x0200, 0x0A00, Segment.READ_MODE | Segment.WRITE_MODE),
