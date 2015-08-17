@@ -126,10 +126,21 @@ class Core(object):
             self.memory.write_word(dst, result)
         elif wtd == 2:
             self.R[dst] = result
+        return 0
 
-
-    def addc(self, word):
-        pass
+    def addc(self, src, dst, wtd):  # not tested
+        if wtd == 2:
+            dst2 = self.R[dst]
+        elif wtd == 1:
+            dst2 = self.memory.read_word(dst)
+        result = src + dst2 + (self.R[2] & 0x0001)
+        self.setstatusregister(result, dst2, src)
+        result &= 0xffff
+        if wtd == 1:
+            self.memory.write_word(dst, result)
+        elif wtd == 2:
+            self.R[dst] = result
+        return 0
 
     def subc(self, word):
         pass
