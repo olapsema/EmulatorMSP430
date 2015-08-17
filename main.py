@@ -89,6 +89,23 @@ class Core(object):
         return result
         # returns list with params (length, hasSourceWord, hasDestinationWord)
 
+    def setstatusregister(self, result, op1, op2):
+        carrybit = (result & 0x10000) >> 16
+        negativebit = (result & 0x8000) >> 15
+        zerobit = (result & 0xffff) == 0
+        overflowbit = (((op1 & 0x8000) >> 15) == 0 and ((op2 & 0x8000) >> 15) == 0 and negativebit == 1) or \
+                      (((op1 & 0x8000) >> 15) == 1 and ((op2 & 0x8000) >> 15) == 1 and negativebit == 0) # вполне возомжно это строчка лишняя
+        self.R[2] = 0
+        if carrybit == 1:
+            self.R[2] += 1
+        if negativebit == 1:
+            self.R[2] += 4
+        if zerobit == 1:
+            self.R[2] += 2
+        if overflowbit == 1:
+            self.R[2] += 0x0100
+        return 0
+
     # payload
     def mov(self, src, dst, wtd):
         if wtd == 1:
@@ -97,8 +114,19 @@ class Core(object):
             self.R[dst] = src
         return 0
 
-    def add(self, word):
-        pass
+    def add(self, src, dst, wtd):
+        if wtd == 2:
+            dst2 = self.R[dst]
+        elif wtd == 1:
+            dst2 = self.memory.read_word(dst)
+        result = src + dst2
+        self.setstatusregister(result, dst2, src)
+        result &= 0xffff
+        if wtd == 1:
+            self.memory.write_word(dst, result)
+        elif wtd == 2:
+            self.R[dst] = result
+
 
     def addc(self, word):
         pass
@@ -112,20 +140,11 @@ class Core(object):
     def cmp(self, src, dst, wtd):
         if wtd == 2:
             dst = self.R[dst]
-        if wtd == 1:
+        elif wtd == 1:
             dst = self.memory.read_word(dst)
         # result = (dst - src)
         result = dst + (0xffff-src) + 1
-        carrybit = (result & 0x10000) >> 16
-        negativebit = (result & 0x8000) >> 15
-        zerobit = (result & 0xffff) == 0
-        self.R[2] = 0
-        if carrybit == 1:
-            self.R[2] += 1
-        if negativebit == 1:
-            self.R[2] += 4
-        if zerobit == 1:
-            self.R[2] += 2
+        self.setstatusregister(result,dst,((0xffff-src) + 1))
         return 0
 
     def dadd(self, word):
@@ -329,7 +348,7 @@ def read_memory(path):
 
 
 # print(core.R)
-code = read_memory('memoryTestcmp.bin')
+code = read_memory('memoryTestadd.bin')
 memory = Memory(code, [
     Segment('sfr', 0x0000, 0x0200, Segment.READ_MODE | Segment.WRITE_MODE),
     Segment('ram', 0x0200, 0x0A00, Segment.READ_MODE | Segment.WRITE_MODE),
